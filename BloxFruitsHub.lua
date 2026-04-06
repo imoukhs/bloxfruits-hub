@@ -1,5 +1,5 @@
 --[[
-    Blox Fruits Hub v1.0 (MVP)
+    Blox Fruits Hub v1.1
     Built on Rayfield UI
     Features: Fruit ESP | Player ESP | Island Teleport
     Safe tier: All features are client-side only (zero ban risk)
@@ -7,9 +7,32 @@
 ]]
 
 ------------------------------------------------------
--- STARTUP
+-- STARTUP + DUPLICATE PREVENTION
 ------------------------------------------------------
 if not game:IsLoaded() then game.Loaded:Wait() end
+
+-- Prevent multiple UIs from opening
+pcall(function()
+    if getgenv and getgenv().BFHubLoaded then
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Blox Fruits Hub",
+            Text = "Already running!",
+            Duration = 3,
+        })
+        return
+    end
+end)
+
+-- Check flag (if getgenv worked and flag was set, the return above exits)
+-- If we're still here, proceed with loading
+local alreadyLoaded = false
+pcall(function()
+    if getgenv and getgenv().BFHubLoaded then
+        alreadyLoaded = true
+    end
+end)
+if alreadyLoaded then return end
+
 task.wait(2 + math.random() * 2)
 
 ------------------------------------------------------
@@ -25,9 +48,33 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 ------------------------------------------------------
+-- LOADING NOTIFICATION
+------------------------------------------------------
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Blox Fruits Hub",
+        Text = "Loading UI... please wait",
+        Duration = 8,
+    })
+end)
+
+------------------------------------------------------
 -- LOAD RAYFIELD
 ------------------------------------------------------
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+-- Mark as loaded so duplicate executions are blocked
+pcall(function()
+    if getgenv then getgenv().BFHubLoaded = true end
+end)
+
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Blox Fruits Hub",
+        Text = "Hub ready!",
+        Duration = 3,
+    })
+end)
 
 ------------------------------------------------------
 -- HELPERS
@@ -147,37 +194,69 @@ local function createFruitBillboard(fruitModel)
     FruitESPObjects[fruitModel] = bb
 end
 
-local function scanForFruits()
-    -- Blox Fruits spawns fruits as models in Workspace
-    -- They typically contain "Fruit" in the name or are in a Fruits folder
-    local found = {}
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local name = obj.Name
-            if name:find("Fruit") or name:find("fruit") then
-                -- Exclude player backpack items and equipped tools
-                local isPlayerItem = false
-                for _, p in pairs(Players:GetPlayers()) do
-                    if obj:IsDescendantOf(p.Character) or obj:IsDescendantOf(p) then
-                        isPlayerItem = true; break
-                    end
-                end
-                if not isPlayerItem then
-                    table.insert(found, obj)
-                    createFruitBillboard(obj)
-                end
-            end
+local function isActualFruit(obj)
+    -- Actual spawned/dropped fruits in Blox Fruits:
+    -- 1. Are Models without a Humanoid (NPCs/dealers HAVE humanoids)
+    -- 2. Usually have a Handle or MeshPart inside
+    -- 3. Do NOT have "Dealer" or "Shop" in name or parent name
+    -- 4. Are relatively small (not full character-sized)
+
+    if not obj:IsA("Model") then return false end
+
+    -- REJECT: Has a Humanoid = it's an NPC, not a fruit
+    if obj:FindFirstChildOfClass("Humanoid") then return false end
+
+    -- REJECT: Is a player's item
+    for _, p in pairs(Players:GetPlayers()) do
+        if obj:IsDescendantOf(p.Character) or obj:IsDescendantOf(p) then
+            return false
         end
     end
 
-    -- Also check common fruit spawn containers
+    -- REJECT: Name contains dealer/shop/npc keywords
+    local name = obj.Name:lower()
+    local parentName = obj.Parent and obj.Parent.Name:lower() or ""
+    if name:find("dealer") or name:find("shop") or name:find("npc")
+        or name:find("vendor") or name:find("merchant") or name:find("cousin")
+        or parentName:find("npc") or parentName:find("shop") or parentName:find("dealer") then
+        return false
+    end
+
+    -- REJECT: If parent is a character-like model (NPC container)
+    if obj.Parent and obj.Parent:FindFirstChildOfClass("Humanoid") then
+        return false
+    end
+
+    -- ACCEPT: Must have "Fruit" in name
+    if not (name:find("fruit")) then return false end
+
+    -- ACCEPT: Should have a physical part (mesh/handle) but no humanoid
+    local hasPart = obj:FindFirstChildWhichIsA("BasePart") or obj:FindFirstChildWhichIsA("MeshPart")
+    if not hasPart then return false end
+
+    return true
+end
+
+local function scanForFruits()
+    local found = {}
+
+    -- Method 1: Scan entire workspace for fruit models
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if isActualFruit(obj) then
+            table.insert(found, obj)
+            createFruitBillboard(obj)
+        end
+    end
+
+    -- Method 2: Check known fruit spawn containers
     pcall(function()
-        local fruitsFolder = Workspace:FindFirstChild("Fruits") or Workspace:FindFirstChild("DroppedItems")
-        if fruitsFolder then
-            for _, obj in pairs(fruitsFolder:GetChildren()) do
-                if obj:IsA("Model") or obj:IsA("BasePart") then
-                    table.insert(found, obj)
-                    if obj:IsA("Model") then
+        local containers = {"Fruits", "DroppedItems", "Spawned", "GroundItems"}
+        for _, containerName in ipairs(containers) do
+            local folder = Workspace:FindFirstChild(containerName)
+            if folder then
+                for _, obj in pairs(folder:GetChildren()) do
+                    if obj:IsA("Model") and not obj:FindFirstChildOfClass("Humanoid") then
+                        table.insert(found, obj)
                         createFruitBillboard(obj)
                     end
                 end
@@ -315,31 +394,38 @@ end
 local function teleportTo(cf)
     local hrp = getHRP()
     if not hrp then return end
-    -- Gradual TP for safety (even though Blox Fruits is lenient)
     local startPos = hrp.Position
     local targetPos = cf.Position
     local dist = (targetPos - startPos).Magnitude
+
     if dist < 50 then
         hrp.CFrame = cf + Vector3.new(0, 3, 0)
         return
     end
-    local steps = math.clamp(math.floor(dist / 100), 5, 15)
+
+    -- Slow gradual TP — move ~50 studs per step with 0.2s wait
+    -- This keeps speed under the server's rejection threshold
+    local steps = math.clamp(math.floor(dist / 50), 10, 40)
     for i = 1, steps do
         if not getHRP() then break end
         local alpha = i / steps
-        local mid = startPos:Lerp(targetPos, alpha) + Vector3.new(0, 30, 0) -- fly high to avoid terrain
-        hrp.CFrame = CFrame.new(mid)
-        task.wait(0.05)
+        local mid = startPos:Lerp(targetPos, alpha) + Vector3.new(0, 15, 0)
+        getHRP().CFrame = CFrame.new(mid)
+        jitterWait(0.18)
     end
-    -- Final placement
-    hrp.CFrame = cf + Vector3.new(0, 5, 0)
+    -- Final placement with small pause
+    task.wait(0.3)
+    local finalHRP = getHRP()
+    if finalHRP then
+        finalHRP.CFrame = cf + Vector3.new(0, 5, 0)
+    end
 end
 
 ------------------------------------------------------
 -- RAYFIELD GUI
 ------------------------------------------------------
 local Window = Rayfield:CreateWindow({
-    Name = "Blox Fruits Hub v1.0",
+    Name = "Blox Fruits Hub v1.1",
     Icon = 0,
     LoadingTitle = "Blox Fruits Hub",
     LoadingSubtitle = "by imoukhs",
@@ -357,7 +443,8 @@ local Window = Rayfield:CreateWindow({
 ------------------------------------------------------
 -- TAB: FRUIT ESP
 ------------------------------------------------------
-local FruitTab = Window:CreateTab("Fruit ESP", 4483362458)
+-- Rayfield icon names (Lucide icons): https://lucide.dev/icons
+local FruitTab = Window:CreateTab("Fruit ESP", "cherry")
 
 FruitTab:CreateSection("Devil Fruit Finder")
 
@@ -374,17 +461,18 @@ FruitTab:CreateToggle({
 
             -- Also watch for new fruits spawning
             Connections["FruitAdded"] = Workspace.DescendantAdded:Connect(function(obj)
-                if obj:IsA("Model") and obj.Name:find("Fruit") then
-                    task.wait(0.5)
-                    createFruitBillboard(obj)
-                    -- Alert!
-                    pcall(function()
-                        game:GetService("StarterGui"):SetCore("SendNotification", {
-                            Title = "FRUIT SPAWNED!",
-                            Text = obj.Name .. " appeared!",
-                            Duration = 10,
-                        })
-                    end)
+                if obj:IsA("Model") and obj.Name:lower():find("fruit") then
+                    task.wait(0.5) -- wait for model to fully load
+                    if isActualFruit(obj) then
+                        createFruitBillboard(obj)
+                        pcall(function()
+                            game:GetService("StarterGui"):SetCore("SendNotification", {
+                                Title = "FRUIT SPAWNED!",
+                                Text = obj.Name .. " appeared!",
+                                Duration = 10,
+                            })
+                        end)
+                    end
                 end
             end)
         else
@@ -440,7 +528,7 @@ FruitTab:CreateLabel("Alerts you when a new fruit spawns!")
 ------------------------------------------------------
 -- TAB: PLAYER ESP
 ------------------------------------------------------
-local PlayerTab = Window:CreateTab("Player ESP", 4483362458)
+local PlayerTab = Window:CreateTab("Player ESP", "users")
 
 PlayerTab:CreateSection("Player Tracker")
 
@@ -473,7 +561,7 @@ PlayerTab:CreateLabel("Shows name, level, distance, and HP through walls")
 ------------------------------------------------------
 -- TAB: TELEPORT
 ------------------------------------------------------
-local TPTab = Window:CreateTab("Teleport", 4483362458)
+local TPTab = Window:CreateTab("Teleport", "map-pin")
 
 -- Sea 1
 TPTab:CreateSection("Sea 1")
@@ -517,7 +605,7 @@ end
 ------------------------------------------------------
 -- TAB: EXTRAS
 ------------------------------------------------------
-local ExtrasTab = Window:CreateTab("Extras", 4483362458)
+local ExtrasTab = Window:CreateTab("Extras", "settings")
 
 ExtrasTab:CreateSection("Utilities")
 

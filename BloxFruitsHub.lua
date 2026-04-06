@@ -195,44 +195,33 @@ local function createFruitBillboard(fruitModel)
 end
 
 local function isActualFruit(obj)
-    -- Actual spawned/dropped fruits in Blox Fruits:
-    -- 1. Are Models without a Humanoid (NPCs/dealers HAVE humanoids)
-    -- 2. Usually have a Handle or MeshPart inside
-    -- 3. Do NOT have "Dealer" or "Shop" in name or parent name
-    -- 4. Are relatively small (not full character-sized)
+    -- CONFIRMED from DEX: Fruits spawn as DIRECT CHILDREN of Workspace
+    -- Named like "Blade Fruit", "Spring Fruit", etc.
+    -- They are Tool instances (not Models), no Humanoid
+    -- Parent must be Workspace (not inside NPC, Enemies, Characters, etc.)
 
-    if not obj:IsA("Model") then return false end
+    -- Must be direct child of Workspace
+    if obj.Parent ~= Workspace then return false end
 
-    -- REJECT: Has a Humanoid = it's an NPC, not a fruit
-    if obj:FindFirstChildOfClass("Humanoid") then return false end
+    -- Must end with "Fruit" in the name
+    local name = obj.Name
+    if not name:match("Fruit$") then return false end
 
-    -- REJECT: Is a player's item
+    -- REJECT: Has Humanoid (NPC)
+    if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then return false end
+
+    -- REJECT: Is in player inventory
     for _, p in pairs(Players:GetPlayers()) do
         if obj:IsDescendantOf(p.Character) or obj:IsDescendantOf(p) then
             return false
         end
     end
 
-    -- REJECT: Name contains dealer/shop/npc keywords
-    local name = obj.Name:lower()
-    local parentName = obj.Parent and obj.Parent.Name:lower() or ""
-    if name:find("dealer") or name:find("shop") or name:find("npc")
-        or name:find("vendor") or name:find("merchant") or name:find("cousin")
-        or parentName:find("npc") or parentName:find("shop") or parentName:find("dealer") then
+    -- REJECT: NPC/dealer keywords
+    local lower = name:lower()
+    if lower:find("dealer") or lower:find("shop") or lower:find("npc") or lower:find("vendor") then
         return false
     end
-
-    -- REJECT: If parent is a character-like model (NPC container)
-    if obj.Parent and obj.Parent:FindFirstChildOfClass("Humanoid") then
-        return false
-    end
-
-    -- ACCEPT: Must have "Fruit" in name
-    if not (name:find("fruit")) then return false end
-
-    -- ACCEPT: Should have a physical part (mesh/handle) but no humanoid
-    local hasPart = obj:FindFirstChildWhichIsA("BasePart") or obj:FindFirstChildWhichIsA("MeshPart")
-    if not hasPart then return false end
 
     return true
 end
@@ -240,29 +229,14 @@ end
 local function scanForFruits()
     local found = {}
 
-    -- Method 1: Scan entire workspace for fruit models
-    for _, obj in pairs(Workspace:GetDescendants()) do
+    -- Scan direct children of Workspace for fruits
+    -- (confirmed via DEX: "Blade Fruit", "Spring Fruit" etc. are Workspace children)
+    for _, obj in pairs(Workspace:GetChildren()) do
         if isActualFruit(obj) then
             table.insert(found, obj)
             createFruitBillboard(obj)
         end
     end
-
-    -- Method 2: Check known fruit spawn containers
-    pcall(function()
-        local containers = {"Fruits", "DroppedItems", "Spawned", "GroundItems"}
-        for _, containerName in ipairs(containers) do
-            local folder = Workspace:FindFirstChild(containerName)
-            if folder then
-                for _, obj in pairs(folder:GetChildren()) do
-                    if obj:IsA("Model") and not obj:FindFirstChildOfClass("Humanoid") then
-                        table.insert(found, obj)
-                        createFruitBillboard(obj)
-                    end
-                end
-            end
-        end
-    end)
 
     return found
 end
@@ -458,9 +432,10 @@ FruitTab:CreateToggle({
             end)
 
             -- Also watch for new fruits spawning
-            Connections["FruitAdded"] = Workspace.DescendantAdded:Connect(function(obj)
-                if obj:IsA("Model") and obj.Name:lower():find("fruit") then
-                    task.wait(0.5) -- wait for model to fully load
+            -- Watch Workspace direct children for new fruit spawns
+            Connections["FruitAdded"] = Workspace.ChildAdded:Connect(function(obj)
+                if obj.Name:match("Fruit$") then
+                    task.wait(0.5)
                     if isActualFruit(obj) then
                         createFruitBillboard(obj)
                         pcall(function()
@@ -608,31 +583,33 @@ end
 -- TODO: These are common Sea 1 setups. Use DEX Explorer to verify exact NPC names.
 local QuestData = {
     -- Sea 1
-    {level = {1, 15},     island = "Starter Island",    questNPC = "Bandit Quest Giver",     mobName = "Bandit",            mobArea = CFrame.new(1093, 16, 1310)},
-    {level = {16, 30},    island = "Jungle",             questNPC = "Jungle Quest Giver",     mobName = "Monkey",            mobArea = CFrame.new(-1613, 37, 152)},
-    {level = {31, 60},    island = "Pirate Village",     questNPC = "Pirate Quest Giver",     mobName = "Pirate",            mobArea = CFrame.new(-1152, 5, 3826)},
-    {level = {61, 90},    island = "Desert",             questNPC = "Desert Quest Giver",     mobName = "Desert Bandit",     mobArea = CFrame.new(903, 20, 4393)},
-    {level = {91, 120},   island = "Frozen Village",     questNPC = "Frozen Quest Giver",     mobName = "Snow Bandit",       mobArea = CFrame.new(1510, 88, -5765)},
-    {level = {121, 150},  island = "Marine Fortress",    questNPC = "Marine Quest Giver",     mobName = "Marine",            mobArea = CFrame.new(-4851, 25, 4332)},
-    {level = {151, 200},  island = "Skylands",           questNPC = "Sky Quest Giver",        mobName = "Sky Bandit",        mobArea = CFrame.new(-4851, 800, -2561)},
-    {level = {201, 250},  island = "Prison",             questNPC = "Prison Quest Giver",     mobName = "Prisoner",          mobArea = CFrame.new(4875, 6, 735)},
-    {level = {251, 325},  island = "Colosseum",          questNPC = "Colosseum Quest Giver",  mobName = "Gladiator",         mobArea = CFrame.new(-1428, 8, -2867)},
-    {level = {326, 375},  island = "Magma Village",      questNPC = "Magma Quest Giver",      mobName = "Military Soldier",  mobArea = CFrame.new(-5312, 12, 8531)},
-    {level = {376, 450},  island = "Underwater City",    questNPC = "Water Quest Giver",      mobName = "Fishman",           mobArea = CFrame.new(3856, -2, 1174)},
-    {level = {451, 575},  island = "Fountain City",      questNPC = "Fountain Quest Giver",   mobName = "Galley Pirate",     mobArea = CFrame.new(5259, 40, 4711)},
+    -- questId format confirmed via SimpleSpy: "StartQuest", questId, 1
+    -- Sea 1
+    {level = {1, 15},     island = "Starter Island",    questId = "BanditQuest1",       mobName = "Bandit",            mobArea = CFrame.new(1093, 16, 1310)},
+    {level = {16, 30},    island = "Jungle",             questId = "MonkeyQuest1",       mobName = "Monkey",            mobArea = CFrame.new(-1613, 37, 152)},
+    {level = {31, 60},    island = "Pirate Village",     questId = "PirateQuest1",       mobName = "Pirate",            mobArea = CFrame.new(-1152, 5, 3826)},
+    {level = {61, 90},    island = "Desert",             questId = "DesertBanditQuest1", mobName = "Desert Bandit",     mobArea = CFrame.new(903, 20, 4393)},
+    {level = {91, 120},   island = "Frozen Village",     questId = "SnowBanditQuest1",   mobName = "Snow Bandit",       mobArea = CFrame.new(1510, 88, -5765)},
+    {level = {121, 150},  island = "Marine Fortress",    questId = "MarineQuest1",       mobName = "Marine",            mobArea = CFrame.new(-4851, 25, 4332)},
+    {level = {151, 200},  island = "Skylands",           questId = "SkyBanditQuest1",    mobName = "Sky Bandit",        mobArea = CFrame.new(-4851, 800, -2561)},
+    {level = {201, 250},  island = "Prison",             questId = "PrisonerQuest1",     mobName = "Prisoner",          mobArea = CFrame.new(4875, 6, 735)},
+    {level = {251, 325},  island = "Colosseum",          questId = "GladiatorQuest1",    mobName = "Gladiator",         mobArea = CFrame.new(-1428, 8, -2867)},
+    {level = {326, 375},  island = "Magma Village",      questId = "MilitaryQuest1",     mobName = "Military Soldier",  mobArea = CFrame.new(-5312, 12, 8531)},
+    {level = {376, 450},  island = "Underwater City",    questId = "FishmanQuest1",      mobName = "Fishman",           mobArea = CFrame.new(3856, -2, 1174)},
+    {level = {451, 575},  island = "Fountain City",      questId = "GalleyQuest1",       mobName = "Galley Pirate",     mobArea = CFrame.new(5259, 40, 4711)},
     -- Sea 2
-    {level = {700, 850},  island = "Kingdom of Rose",    questNPC = "Rose Quest Giver",       mobName = "Swan Pirate",       mobArea = CFrame.new(-2247, 73, -1671)},
-    {level = {851, 975},  island = "Green Zone",         questNPC = "Green Zone Quest Giver", mobName = "Zombie",            mobArea = CFrame.new(-2448, 8, -3208)},
-    {level = {976, 1100}, island = "Graveyard",          questNPC = "Graveyard Quest Giver",  mobName = "Vampire",           mobArea = CFrame.new(-5434, 12, -793)},
-    {level = {1100,1250}, island = "Snow Mountain",      questNPC = "Snow Quest Giver",       mobName = "Snow Trooper",      mobArea = CFrame.new(609, 400, -5258)},
-    {level = {1250,1425}, island = "Hot and Cold",       questNPC = "Hot/Cold Quest Giver",   mobName = "Magma Ninja",       mobArea = CFrame.new(-6224, 16, -4902)},
-    {level = {1425,1500}, island = "Ice Castle",         questNPC = "Ice Quest Giver",        mobName = "Ice Viking",        mobArea = CFrame.new(6170, 290, -6734)},
+    {level = {700, 850},  island = "Kingdom of Rose",    questId = "SwanQuest1",         mobName = "Swan Pirate",       mobArea = CFrame.new(-2247, 73, -1671)},
+    {level = {851, 975},  island = "Green Zone",         questId = "ZombieQuest1",       mobName = "Zombie",            mobArea = CFrame.new(-2448, 8, -3208)},
+    {level = {976, 1100}, island = "Graveyard",          questId = "VampireQuest1",      mobName = "Vampire",           mobArea = CFrame.new(-5434, 12, -793)},
+    {level = {1100,1250}, island = "Snow Mountain",      questId = "SnowTrooperQuest1",  mobName = "Snow Trooper",      mobArea = CFrame.new(609, 400, -5258)},
+    {level = {1250,1425}, island = "Hot and Cold",       questId = "MagmaNinjaQuest1",   mobName = "Magma Ninja",       mobArea = CFrame.new(-6224, 16, -4902)},
+    {level = {1425,1500}, island = "Ice Castle",         questId = "IceVikingQuest1",    mobName = "Ice Viking",        mobArea = CFrame.new(6170, 290, -6734)},
     -- Sea 3
-    {level = {1500,1625}, island = "Port Town",          questNPC = "Port Quest Giver",       mobName = "Pirate Millionaire", mobArea = CFrame.new(-290, 14, 5321)},
-    {level = {1625,1800}, island = "Hydra Island",       questNPC = "Hydra Quest Giver",      mobName = "Dragon Crew",       mobArea = CFrame.new(-4459, 200, -5726)},
-    {level = {1800,1975}, island = "Great Tree",         questNPC = "Tree Quest Giver",       mobName = "Jungle Pirate",     mobArea = CFrame.new(2164, -15, -966)},
-    {level = {1975,2075}, island = "Floating Turtle",    questNPC = "Turtle Quest Giver",     mobName = "Marine Commodore",  mobArea = CFrame.new(-12681, 380, -7504)},
-    {level = {2075,2450}, island = "Haunted Castle",     questNPC = "Haunted Quest Giver",    mobName = "Cursed Captain",    mobArea = CFrame.new(-9499, 150, 5765)},
+    {level = {1500,1625}, island = "Port Town",          questId = "MillionaireQuest1",  mobName = "Pirate Millionaire", mobArea = CFrame.new(-290, 14, 5321)},
+    {level = {1625,1800}, island = "Hydra Island",       questId = "DragonCrewQuest1",   mobName = "Dragon Crew",       mobArea = CFrame.new(-4459, 200, -5726)},
+    {level = {1800,1975}, island = "Great Tree",         questId = "JunglePirateQuest1", mobName = "Jungle Pirate",     mobArea = CFrame.new(2164, -15, -966)},
+    {level = {1975,2075}, island = "Floating Turtle",    questId = "CommodoreQuest1",    mobName = "Marine Commodore",  mobArea = CFrame.new(-12681, 380, -7504)},
+    {level = {2075,2450}, island = "Haunted Castle",     questId = "CursedCaptainQuest1",mobName = "Cursed Captain",    mobArea = CFrame.new(-9499, 150, 5765)},
 }
 
 local FarmConfig = {
@@ -694,8 +671,11 @@ local function findMob(mobName, range)
     local hrp = getHRP()
     if not hrp then return nil end
     local nearest, bestDist = nil, range or 300
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name == mobName and obj:FindFirstChildOfClass("Humanoid") then
+    -- Search in Workspace.Enemies folder (confirmed via DEX)
+    local enemiesFolder = Workspace:FindFirstChild("Enemies")
+    if not enemiesFolder then return nil end
+    for _, obj in pairs(enemiesFolder:GetChildren()) do
+        if obj:IsA("Model") and obj.Name == mobName then
             local hum = obj:FindFirstChildOfClass("Humanoid")
             local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
             if hum and hum.Health > 0 and root then
@@ -799,6 +779,29 @@ local function attackMob(mob)
     end)
 end
 
+local function startQuest(questId)
+    -- Fire the real StartQuest remote (confirmed via SimpleSpy)
+    -- Format: "StartQuest", questId, 1
+    pcall(function()
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        if remotes then
+            local commF = remotes:FindFirstChild("CommF_") or remotes:FindFirstChild("CommE_")
+            if commF and commF:IsA("RemoteFunction") then
+                commF:InvokeServer("StartQuest", questId, 1)
+            end
+        end
+    end)
+    -- Fallback: try firing on all matching remotes
+    pcall(function()
+        for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+            if remote:IsA("RemoteFunction") and remote.Name:find("Comm") then
+                remote:InvokeServer("StartQuest", questId, 1)
+                break
+            end
+        end
+    end)
+end
+
 local function runAutoFarm()
     while FarmConfig.Enabled and isAlive(LocalPlayer) do
         local quest = getBestQuest()
@@ -811,44 +814,21 @@ local function runAutoFarm()
         FarmConfig.CurrentQuest = quest
         FarmConfig.Status = "Farming: " .. quest.island .. " (" .. quest.mobName .. ")"
 
-        -- Step 1: Go to quest area and accept quest if needed
+        -- Step 1: Accept quest via remote (no NPC interaction needed)
         if not hasActiveQuest() then
-            FarmConfig.Status = "Accepting quest at " .. quest.island
-            teleportTo(quest.mobArea)
-            jitterWait(1)
-
-            -- Find and interact with quest NPC
-            local npc = findQuestNPC(quest.questNPC)
-            if npc then
-                interactNPC(npc)
-                jitterWait(1)
-                -- Try clicking accept/start buttons
-                pcall(function()
-                    local gui = LocalPlayer:FindFirstChild("PlayerGui")
-                    if gui then
-                        for _, btn in pairs(gui:GetDescendants()) do
-                            if btn:IsA("TextButton") then
-                                local text = btn.Text:lower()
-                                if text:find("accept") or text:find("start") or text:find("ok") then
-                                    btn.MouseButton1Click:Fire()
-                                    jitterWait(0.3)
-                                end
-                            end
-                        end
-                    end
-                end)
-            end
+            FarmConfig.Status = "Accepting quest: " .. quest.questId
+            startQuest(quest.questId)
             jitterWait(1)
         end
 
-        -- Step 2: Find and kill mobs
+        -- Step 2: Find and kill mobs in Enemies folder
         local mob, dist = findMob(quest.mobName, 500)
         if mob then
             FarmConfig.Status = "Attacking " .. quest.mobName .. " (" .. math.floor(dist) .. "m)"
             attackMob(mob)
             jitterWait(0.3)
         else
-            -- No mobs found, teleport to mob area
+            -- No mobs nearby, teleport to mob area
             FarmConfig.Status = "Moving to " .. quest.island
             teleportTo(quest.mobArea)
             jitterWait(2)
@@ -1135,6 +1115,32 @@ ExtrasTab:CreateToggle({
 ExtrasTab:CreateSection("Coming Soon")
 ExtrasTab:CreateLabel("v1.3: Auto Raid")
 ExtrasTab:CreateLabel("v1.4: Stat Auto-Assign")
+
+------------------------------------------------------
+-- RENAME MINIMIZED BUTTON
+------------------------------------------------------
+-- Rayfield shows "Show Rayfield" when minimized — override it
+task.spawn(function()
+    task.wait(2) -- wait for Rayfield to fully render
+    pcall(function()
+        local coreGui = game:GetService("CoreGui")
+        for _, gui in pairs(coreGui:GetDescendants()) do
+            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+                if gui.Text == "Show Rayfield" then
+                    gui.Text = "BF Hub"
+                end
+            end
+        end
+        -- Also check gethui
+        if gethui then
+            for _, gui in pairs(gethui():GetDescendants()) do
+                if (gui:IsA("TextLabel") or gui:IsA("TextButton")) and gui.Text == "Show Rayfield" then
+                    gui.Text = "BF Hub"
+                end
+            end
+        end
+    end)
+end)
 
 ------------------------------------------------------
 -- CLEANUP

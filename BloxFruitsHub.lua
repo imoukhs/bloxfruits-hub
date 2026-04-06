@@ -423,7 +423,7 @@ end
 -- RAYFIELD GUI
 ------------------------------------------------------
 local Window = Rayfield:CreateWindow({
-    Name = "Blox Fruits Hub v1.1",
+    Name = "Blox Fruits Hub v1.2",
     Icon = 0,
     LoadingTitle = "Blox Fruits Hub",
     LoadingSubtitle = "by imoukhs",
@@ -601,6 +601,457 @@ for _, island in ipairs(Islands) do
 end
 
 ------------------------------------------------------
+-- AUTO FARM DATA (Sea 1 focus, others included)
+------------------------------------------------------
+
+-- Quest NPCs and their mobs per island
+-- TODO: These are common Sea 1 setups. Use DEX Explorer to verify exact NPC names.
+local QuestData = {
+    -- Sea 1
+    {level = {1, 15},     island = "Starter Island",    questNPC = "Bandit Quest Giver",     mobName = "Bandit",            mobArea = CFrame.new(1093, 16, 1310)},
+    {level = {16, 30},    island = "Jungle",             questNPC = "Jungle Quest Giver",     mobName = "Monkey",            mobArea = CFrame.new(-1613, 37, 152)},
+    {level = {31, 60},    island = "Pirate Village",     questNPC = "Pirate Quest Giver",     mobName = "Pirate",            mobArea = CFrame.new(-1152, 5, 3826)},
+    {level = {61, 90},    island = "Desert",             questNPC = "Desert Quest Giver",     mobName = "Desert Bandit",     mobArea = CFrame.new(903, 20, 4393)},
+    {level = {91, 120},   island = "Frozen Village",     questNPC = "Frozen Quest Giver",     mobName = "Snow Bandit",       mobArea = CFrame.new(1510, 88, -5765)},
+    {level = {121, 150},  island = "Marine Fortress",    questNPC = "Marine Quest Giver",     mobName = "Marine",            mobArea = CFrame.new(-4851, 25, 4332)},
+    {level = {151, 200},  island = "Skylands",           questNPC = "Sky Quest Giver",        mobName = "Sky Bandit",        mobArea = CFrame.new(-4851, 800, -2561)},
+    {level = {201, 250},  island = "Prison",             questNPC = "Prison Quest Giver",     mobName = "Prisoner",          mobArea = CFrame.new(4875, 6, 735)},
+    {level = {251, 325},  island = "Colosseum",          questNPC = "Colosseum Quest Giver",  mobName = "Gladiator",         mobArea = CFrame.new(-1428, 8, -2867)},
+    {level = {326, 375},  island = "Magma Village",      questNPC = "Magma Quest Giver",      mobName = "Military Soldier",  mobArea = CFrame.new(-5312, 12, 8531)},
+    {level = {376, 450},  island = "Underwater City",    questNPC = "Water Quest Giver",      mobName = "Fishman",           mobArea = CFrame.new(3856, -2, 1174)},
+    {level = {451, 575},  island = "Fountain City",      questNPC = "Fountain Quest Giver",   mobName = "Galley Pirate",     mobArea = CFrame.new(5259, 40, 4711)},
+    -- Sea 2
+    {level = {700, 850},  island = "Kingdom of Rose",    questNPC = "Rose Quest Giver",       mobName = "Swan Pirate",       mobArea = CFrame.new(-2247, 73, -1671)},
+    {level = {851, 975},  island = "Green Zone",         questNPC = "Green Zone Quest Giver", mobName = "Zombie",            mobArea = CFrame.new(-2448, 8, -3208)},
+    {level = {976, 1100}, island = "Graveyard",          questNPC = "Graveyard Quest Giver",  mobName = "Vampire",           mobArea = CFrame.new(-5434, 12, -793)},
+    {level = {1100,1250}, island = "Snow Mountain",      questNPC = "Snow Quest Giver",       mobName = "Snow Trooper",      mobArea = CFrame.new(609, 400, -5258)},
+    {level = {1250,1425}, island = "Hot and Cold",       questNPC = "Hot/Cold Quest Giver",   mobName = "Magma Ninja",       mobArea = CFrame.new(-6224, 16, -4902)},
+    {level = {1425,1500}, island = "Ice Castle",         questNPC = "Ice Quest Giver",        mobName = "Ice Viking",        mobArea = CFrame.new(6170, 290, -6734)},
+    -- Sea 3
+    {level = {1500,1625}, island = "Port Town",          questNPC = "Port Quest Giver",       mobName = "Pirate Millionaire", mobArea = CFrame.new(-290, 14, 5321)},
+    {level = {1625,1800}, island = "Hydra Island",       questNPC = "Hydra Quest Giver",      mobName = "Dragon Crew",       mobArea = CFrame.new(-4459, 200, -5726)},
+    {level = {1800,1975}, island = "Great Tree",         questNPC = "Tree Quest Giver",       mobName = "Jungle Pirate",     mobArea = CFrame.new(2164, -15, -966)},
+    {level = {1975,2075}, island = "Floating Turtle",    questNPC = "Turtle Quest Giver",     mobName = "Marine Commodore",  mobArea = CFrame.new(-12681, 380, -7504)},
+    {level = {2075,2450}, island = "Haunted Castle",     questNPC = "Haunted Quest Giver",    mobName = "Cursed Captain",    mobArea = CFrame.new(-9499, 150, 5765)},
+}
+
+local FarmConfig = {
+    Enabled = false,
+    CurrentQuest = nil,
+    KillCount = 0,
+    Status = "Idle",
+}
+
+local function getPlayerLevel()
+    local level = 1
+    pcall(function()
+        -- Try multiple common locations for level
+        local ls = LocalPlayer:FindFirstChild("leaderstats")
+        if ls then
+            local lvl = ls:FindFirstChild("Level") or ls:FindFirstChild("Lvl")
+            if lvl then level = lvl.Value end
+        end
+        -- Also try Data folder (some BF versions)
+        local data = LocalPlayer:FindFirstChild("Data")
+        if data then
+            local lvl = data:FindFirstChild("Level")
+            if lvl then level = lvl.Value end
+        end
+    end)
+    return level
+end
+
+local function getBestQuest()
+    local level = getPlayerLevel()
+    local best = nil
+    for _, quest in ipairs(QuestData) do
+        if level >= quest.level[1] and level <= quest.level[2] then
+            best = quest
+        end
+    end
+    -- If overleveled, use highest available
+    if not best then
+        for i = #QuestData, 1, -1 do
+            if getPlayerLevel() >= QuestData[i].level[1] then
+                best = QuestData[i]
+                break
+            end
+        end
+    end
+    return best
+end
+
+local function findQuestNPC(npcName)
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == npcName then
+            return obj
+        end
+    end
+    return nil
+end
+
+local function findMob(mobName, range)
+    local hrp = getHRP()
+    if not hrp then return nil end
+    local nearest, bestDist = nil, range or 300
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == mobName and obj:FindFirstChildOfClass("Humanoid") then
+            local hum = obj:FindFirstChildOfClass("Humanoid")
+            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
+            if hum and hum.Health > 0 and root then
+                local d = (root.Position - hrp.Position).Magnitude
+                if d < bestDist then
+                    nearest = obj
+                    bestDist = d
+                end
+            end
+        end
+    end
+    return nearest, bestDist
+end
+
+local function hasActiveQuest()
+    -- Check if player already has an active quest
+    local hasQuest = false
+    pcall(function()
+        local questFolder = LocalPlayer:FindFirstChild("PlayerGui")
+        if questFolder then
+            for _, gui in pairs(questFolder:GetDescendants()) do
+                if gui:IsA("TextLabel") and gui.Text:find("Quest") then
+                    hasQuest = true
+                end
+            end
+        end
+    end)
+    return hasQuest
+end
+
+local function interactNPC(npcModel)
+    if not npcModel then return end
+    local root = npcModel:FindFirstChild("HumanoidRootPart") or npcModel:FindFirstChild("Head") or npcModel:FindFirstChild("Torso")
+    if not root then return end
+
+    -- Teleport close to NPC
+    local hrp = getHRP()
+    if hrp then
+        hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, 0, 3), root.Position)
+    end
+    jitterWait(0.5)
+
+    -- Try interacting via ProximityPrompt
+    pcall(function()
+        for _, prompt in pairs(npcModel:GetDescendants()) do
+            if prompt:IsA("ProximityPrompt") then
+                fireproximityprompt(prompt)
+                return
+            end
+        end
+    end)
+
+    -- Try ClickDetector
+    pcall(function()
+        for _, cd in pairs(npcModel:GetDescendants()) do
+            if cd:IsA("ClickDetector") then
+                fireclickdetector(cd)
+                return
+            end
+        end
+    end)
+
+    -- Try Dialog
+    pcall(function()
+        for _, dialog in pairs(npcModel:GetDescendants()) do
+            if dialog:IsA("Dialog") then
+                dialog:SignalDialogChoiceSelected(LocalPlayer, dialog.DialogChoices[1])
+            end
+        end
+    end)
+
+    jitterWait(0.5)
+end
+
+local function attackMob(mob)
+    if not mob then return end
+    local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso")
+    if not root then return end
+    local hrp = getHRP()
+    if not hrp then return end
+
+    -- Medium aggression: TP close (within 5 studs) then attack
+    local dist = (root.Position - hrp.Position).Magnitude
+    if dist > 5 then
+        hrp.CFrame = CFrame.new(root.Position + Vector3.new(0, 0, 3), root.Position)
+    end
+    jitterWait(0.05)
+
+    -- Attack with equipped tool
+    pcall(function()
+        local tool = getCharacter():FindFirstChildOfClass("Tool")
+        if tool then tool:Activate() end
+    end)
+
+    -- Also try mouse click simulation
+    pcall(function()
+        local vim = game:GetService("VirtualInputManager")
+        vim:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        task.wait(0.05)
+        vim:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+end
+
+local function runAutoFarm()
+    while FarmConfig.Enabled and isAlive(LocalPlayer) do
+        local quest = getBestQuest()
+        if not quest then
+            FarmConfig.Status = "No quest for your level"
+            jitterWait(3)
+            continue
+        end
+
+        FarmConfig.CurrentQuest = quest
+        FarmConfig.Status = "Farming: " .. quest.island .. " (" .. quest.mobName .. ")"
+
+        -- Step 1: Go to quest area and accept quest if needed
+        if not hasActiveQuest() then
+            FarmConfig.Status = "Accepting quest at " .. quest.island
+            teleportTo(quest.mobArea)
+            jitterWait(1)
+
+            -- Find and interact with quest NPC
+            local npc = findQuestNPC(quest.questNPC)
+            if npc then
+                interactNPC(npc)
+                jitterWait(1)
+                -- Try clicking accept/start buttons
+                pcall(function()
+                    local gui = LocalPlayer:FindFirstChild("PlayerGui")
+                    if gui then
+                        for _, btn in pairs(gui:GetDescendants()) do
+                            if btn:IsA("TextButton") then
+                                local text = btn.Text:lower()
+                                if text:find("accept") or text:find("start") or text:find("ok") then
+                                    btn.MouseButton1Click:Fire()
+                                    jitterWait(0.3)
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+            jitterWait(1)
+        end
+
+        -- Step 2: Find and kill mobs
+        local mob, dist = findMob(quest.mobName, 500)
+        if mob then
+            FarmConfig.Status = "Attacking " .. quest.mobName .. " (" .. math.floor(dist) .. "m)"
+            attackMob(mob)
+            jitterWait(0.3)
+        else
+            -- No mobs found, teleport to mob area
+            FarmConfig.Status = "Moving to " .. quest.island
+            teleportTo(quest.mobArea)
+            jitterWait(2)
+        end
+
+        jitterWait(0.2)
+    end
+    FarmConfig.Status = "Stopped"
+end
+
+------------------------------------------------------
+-- FRUIT SNIPER (Auto Server Hop)
+------------------------------------------------------
+local SniperConfig = {
+    Enabled = false,
+    HopCount = 0,
+    Status = "Idle",
+    TargetFruits = {}, -- list of fruit names to hunt
+}
+
+local function serverHop()
+    local success = false
+    pcall(function()
+        local servers = HttpService:JSONDecode(
+            game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+        )
+        if servers and servers.data then
+            -- Shuffle to avoid always joining the same servers
+            for i = #servers.data, 2, -1 do
+                local j = math.random(1, i)
+                servers.data[i], servers.data[j] = servers.data[j], servers.data[i]
+            end
+            for _, server in pairs(servers.data) do
+                if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                    game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, server.id, LocalPlayer)
+                    success = true
+                    break
+                end
+            end
+        end
+    end)
+    return success
+end
+
+local function runFruitSniper()
+    while SniperConfig.Enabled do
+        SniperConfig.Status = "Scanning server..."
+        jitterWait(3) -- wait for world to load
+
+        -- Scan for fruits
+        local found = scanForFruits()
+        local targetFound = false
+
+        if #found > 0 then
+            for _, fruit in ipairs(found) do
+                local name = fruit.Name:lower()
+                -- Check if this is a target fruit
+                if #SniperConfig.TargetFruits == 0 then
+                    -- No specific target = any fruit is good
+                    targetFound = true
+                else
+                    for _, target in ipairs(SniperConfig.TargetFruits) do
+                        if name:find(target:lower()) then
+                            targetFound = true
+                            break
+                        end
+                    end
+                end
+                if targetFound then break end
+            end
+        end
+
+        if targetFound then
+            SniperConfig.Status = "FRUIT FOUND! Teleporting..."
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "FRUIT FOUND!",
+                    Text = found[1].Name .. " detected! Go grab it!",
+                    Duration = 15,
+                })
+            end)
+            -- Teleport to the fruit
+            local part = found[1]:FindFirstChildWhichIsA("BasePart") or found[1].PrimaryPart
+            if part then
+                teleportTo(CFrame.new(part.Position))
+            end
+            SniperConfig.Enabled = false -- stop sniping, fruit found
+            break
+        else
+            SniperConfig.HopCount = SniperConfig.HopCount + 1
+            SniperConfig.Status = "No fruit. Hopping... (#" .. SniperConfig.HopCount .. ")"
+            jitterWait(2)
+            serverHop()
+            jitterWait(8) -- wait for server transition
+        end
+    end
+    if not SniperConfig.Enabled then
+        SniperConfig.Status = "Stopped"
+    end
+end
+
+------------------------------------------------------
+-- TAB: AUTO FARM
+------------------------------------------------------
+local FarmTab = Window:CreateTab("Auto Farm", "swords")
+
+FarmTab:CreateSection("Auto Farm (Level " .. getPlayerLevel() .. ")")
+
+local bestQuest = getBestQuest()
+if bestQuest then
+    FarmTab:CreateLabel("Best quest: " .. bestQuest.island .. " (" .. bestQuest.mobName .. ")")
+end
+
+FarmTab:CreateToggle({
+    Name = "Enable Auto Farm",
+    CurrentValue = false,
+    Flag = "AutoFarm",
+    Callback = function(state)
+        FarmConfig.Enabled = state
+        if state then
+            task.spawn(runAutoFarm)
+        end
+    end,
+})
+
+FarmTab:CreateLabel("Auto-accepts quest, TPs to mobs, kills, repeats")
+
+FarmTab:CreateSection("Settings")
+
+FarmTab:CreateButton({
+    Name = "Equip Best Weapon",
+    Callback = function()
+        pcall(function()
+            local backpack = LocalPlayer.Backpack
+            local char = getCharacter()
+            for _, tool in pairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") then
+                    tool.Parent = char
+                    break
+                end
+            end
+        end)
+    end,
+})
+
+FarmTab:CreateButton({
+    Name = "Refresh Quest (detect level change)",
+    Callback = function()
+        local q = getBestQuest()
+        if q then
+            FarmConfig.CurrentQuest = q
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "Quest Updated",
+                    Text = "Lv." .. getPlayerLevel() .. " → " .. q.island .. " (" .. q.mobName .. ")",
+                    Duration = 4,
+                })
+            end)
+        end
+    end,
+})
+
+------------------------------------------------------
+-- TAB: FRUIT SNIPER
+------------------------------------------------------
+local SniperTab = Window:CreateTab("Fruit Sniper", "target")
+
+SniperTab:CreateSection("Auto Server Hop Fruit Hunter")
+
+SniperTab:CreateToggle({
+    Name = "Enable Fruit Sniper",
+    CurrentValue = false,
+    Flag = "FruitSniper",
+    Callback = function(state)
+        SniperConfig.Enabled = state
+        SniperConfig.HopCount = 0
+        if state then
+            task.spawn(runFruitSniper)
+        end
+    end,
+})
+
+SniperTab:CreateDropdown({
+    Name = "Target Fruit (blank = any)",
+    Options = {"Any Fruit", "Leopard", "Dragon", "Dough", "Venom", "Shadow", "Rumble", "Buddha", "Phoenix", "Magma", "Light", "Ice", "Flame"},
+    CurrentOption = {"Any Fruit"},
+    MultipleOptions = true,
+    Flag = "TargetFruits",
+    Callback = function(options)
+        SniperConfig.TargetFruits = {}
+        for _, opt in ipairs(options) do
+            if opt ~= "Any Fruit" then
+                table.insert(SniperConfig.TargetFruits, opt)
+            end
+        end
+    end,
+})
+
+SniperTab:CreateLabel("Hops servers scanning for fruit spawns")
+SniperTab:CreateLabel("Stops + alerts when target fruit found")
+SniperTab:CreateLabel("Teleports you to the fruit automatically")
+
+------------------------------------------------------
 -- TAB: EXTRAS
 ------------------------------------------------------
 local ExtrasTab = Window:CreateTab("Extras", "settings")
@@ -682,9 +1133,8 @@ ExtrasTab:CreateToggle({
 })
 
 ExtrasTab:CreateSection("Coming Soon")
-ExtrasTab:CreateLabel("v1.1: Auto Farm (mob kill + quest)")
-ExtrasTab:CreateLabel("v1.2: Fruit Sniper (auto server hop)")
-ExtrasTab:CreateLabel("v1.3: Auto Raid + Stats")
+ExtrasTab:CreateLabel("v1.3: Auto Raid")
+ExtrasTab:CreateLabel("v1.4: Stat Auto-Assign")
 
 ------------------------------------------------------
 -- CLEANUP
@@ -697,6 +1147,7 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 print("================================================")
-print("  Blox Fruits Hub v1.0 Loaded")
-print("  Tabs: Fruit ESP | Player ESP | Teleport | Extras")
+print("  Blox Fruits Hub v1.2 Loaded")
+print("  Tabs: Fruit ESP | Player ESP | Teleport |")
+print("        Auto Farm | Fruit Sniper | Extras")
 print("================================================")

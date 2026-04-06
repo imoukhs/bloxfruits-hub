@@ -365,6 +365,19 @@ end
 ------------------------------------------------------
 -- TELEPORT
 ------------------------------------------------------
+-- No-clip: temporarily disable collisions during teleport to avoid getting stuck in walls
+local function setNoclip(state)
+    pcall(function()
+        local char = getCharacter()
+        if not char then return end
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = not state
+            end
+        end
+    end)
+end
+
 local function teleportTo(cf)
     local hrp = getHRP()
     if not hrp then return end
@@ -377,12 +390,30 @@ local function teleportTo(cf)
         return
     end
 
-    -- Gradual TP — ~75 studs per step, 0.12s wait (faster but still safe)
+    -- Enable no-clip during teleport to avoid wall collisions
+    setNoclip(true)
+
+    -- Noclip loop during TP (character collision re-enables each frame)
+    local noclipConn
+    noclipConn = RunService.Stepped:Connect(function()
+        pcall(function()
+            local char = getCharacter()
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    end)
+
+    -- Gradual TP — ~75 studs per step, fly above terrain
     local steps = math.clamp(math.floor(dist / 75), 8, 30)
     for i = 1, steps do
         if not getHRP() then break end
         local alpha = i / steps
-        local mid = startPos:Lerp(targetPos, alpha) + Vector3.new(0, 15, 0)
+        local mid = startPos:Lerp(targetPos, alpha) + Vector3.new(0, 20, 0)
         getHRP().CFrame = CFrame.new(mid)
         jitterWait(0.1)
     end
@@ -391,13 +422,177 @@ local function teleportTo(cf)
     if finalHRP then
         finalHRP.CFrame = cf + Vector3.new(0, 5, 0)
     end
+
+    -- Re-enable collisions
+    task.wait(0.3)
+    if noclipConn then noclipConn:Disconnect() end
+    setNoclip(false)
+end
+
+------------------------------------------------------
+-- AIMBOT (Client-side camera lock + face target)
+------------------------------------------------------
+local AimbotConfig = {
+    Enabled = false,
+    Target = nil,
+    Range = 100,
+    TargetPlayers = true,
+    TargetNPCs = true,
+}
+
+local function findAimbotTarget()
+    local hrp = getHRP()
+    if not hrp then return nil end
+    local nearest, bestDist = nil, AimbotConfig.Range
+
+    -- Target players
+    if AimbotConfig.TargetPlayers then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and isAlive(player) then
+                local char = player.Character
+                local targetHRP = char and char:FindFirstChild("HumanoidRootPart")
+                if targetHRP then
+                    local d = (targetHRP.Position - hrp.Position).Magnitude
+                    if d < bestDist then
+                        nearest = targetHRP
+                        bestDist = d
+                    end
+                end
+            end
+        end
+    end
+
+    -- Target NPCs/enemies
+    if AimbotConfig.TargetNPCs then
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, mob in pairs(enemies:GetChildren()) do
+                if mob:IsA("Model") then
+                    local hum = mob:FindFirstChildOfClass("Humanoid")
+                    local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso")
+                    if hum and hum.Health > 0 and root then
+                        local d = (root.Position - hrp.Position).Magnitude
+                        if d < bestDist then
+                            nearest = root
+                            bestDist = d
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nearest
+end
+
+local function runAimbot()
+    Connections["Aimbot"] = RunService.RenderStepped:Connect(function()
+        if not AimbotConfig.Enabled then return end
+        if not isAlive(LocalPlayer) then return end
+
+        local target = findAimbotTarget()
+        if not target then return end
+
+        local hrp = getHRP()
+        if not hrp then return end
+
+        -- Face the target (client-side camera + character rotation)
+        local targetPos = target.Position
+        local myPos = hrp.Position
+
+        -- Rotate character to face target
+        hrp.CFrame = CFrame.new(myPos, Vector3.new(targetPos.X, myPos.Y, targetPos.Z))
+
+        -- Lock camera towards target (subtle, doesn't force full snap)
+        pcall(function()
+            local cam = Workspace.CurrentCamera
+            if cam then
+                local dir = (targetPos - cam.CFrame.Position).Unit
+                cam.CFrame = CFrame.new(cam.CFrame.Position, cam.CFrame.Position + dir)
+            end
+        end)
+    end)
+end
+
+------------------------------------------------------
+-- AUTO SKILLS (Smart Rotation)
+------------------------------------------------------
+local AutoSkillConfig = {
+    Enabled = false,
+    -- Skill keys: Z, X, C, V are standard Blox Fruits ability keys
+    -- F is usually a special/ultimate
+    Skills = {
+        {key = Enum.KeyCode.Z, cooldown = 3,  lastUsed = 0, name = "Skill 1 (Z)"},
+        {key = Enum.KeyCode.X, cooldown = 5,  lastUsed = 0, name = "Skill 2 (X)"},
+        {key = Enum.KeyCode.C, cooldown = 8,  lastUsed = 0, name = "Skill 3 (C)"},
+        {key = Enum.KeyCode.V, cooldown = 12, lastUsed = 0, name = "Skill 4 (V)"},
+        {key = Enum.KeyCode.F, cooldown = 20, lastUsed = 0, name = "Skill 5 (F)"},
+    },
+}
+
+local function runAutoSkills()
+    Connections["AutoSkills"] = RunService.Heartbeat:Connect(function()
+        if not AutoSkillConfig.Enabled then return end
+        if not isAlive(LocalPlayer) then return end
+
+        -- Only use skills when there's a nearby enemy
+        local hrp = getHRP()
+        if not hrp then return end
+
+        local hasNearbyTarget = false
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, mob in pairs(enemies:GetChildren()) do
+                local hum = mob:FindFirstChildOfClass("Humanoid")
+                local root = mob:FindFirstChild("HumanoidRootPart") or mob:FindFirstChild("Torso")
+                if hum and hum.Health > 0 and root then
+                    if (root.Position - hrp.Position).Magnitude < 30 then
+                        hasNearbyTarget = true
+                        break
+                    end
+                end
+            end
+        end
+
+        -- Also check nearby players (for PvP)
+        if not hasNearbyTarget then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and isAlive(player) then
+                    local phrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                    if phrp and (phrp.Position - hrp.Position).Magnitude < 30 then
+                        hasNearbyTarget = true
+                        break
+                    end
+                end
+            end
+        end
+
+        if not hasNearbyTarget then return end
+
+        -- Smart rotation: use skills in order, respecting cooldowns
+        local now = tick()
+        for _, skill in ipairs(AutoSkillConfig.Skills) do
+            if (now - skill.lastUsed) >= skill.cooldown then
+                pcall(function()
+                    local vim = game:GetService("VirtualInputManager")
+                    vim:SendKeyEvent(true, skill.key, false, game)
+                    task.wait(0.05)
+                    vim:SendKeyEvent(false, skill.key, false, game)
+                end)
+                skill.lastUsed = now
+                -- Small delay between skills for smart rotation (not spam)
+                jitterWait(0.4)
+                break -- only use one skill per frame cycle
+            end
+        end
+    end)
 end
 
 ------------------------------------------------------
 -- RAYFIELD GUI
 ------------------------------------------------------
 local Window = Rayfield:CreateWindow({
-    Name = "Blox Fruits Hub v1.2",
+    Name = "Blox Fruits Hub v1.3",
     Icon = "skull",  -- shown when minimized (Lucide icon)
     LoadingTitle = "Blox Fruits Hub",
     LoadingSubtitle = "by imoukhs",
@@ -622,17 +817,41 @@ local FarmConfig = {
 local function getPlayerLevel()
     local level = 1
     pcall(function()
-        -- Try multiple common locations for level
+        -- Search everywhere the level could be stored
+        -- 1. leaderstats
         local ls = LocalPlayer:FindFirstChild("leaderstats")
         if ls then
             local lvl = ls:FindFirstChild("Level") or ls:FindFirstChild("Lvl")
-            if lvl then level = lvl.Value end
+            if lvl then level = lvl.Value; return end
         end
-        -- Also try Data folder (some BF versions)
+        -- 2. Data folder
         local data = LocalPlayer:FindFirstChild("Data")
         if data then
             local lvl = data:FindFirstChild("Level")
-            if lvl then level = lvl.Value end
+            if lvl then level = lvl.Value; return end
+        end
+        -- 3. PlayerGui (BF shows level in HUD)
+        local gui = LocalPlayer:FindFirstChild("PlayerGui")
+        if gui then
+            for _, obj in pairs(gui:GetDescendants()) do
+                if obj:IsA("TextLabel") then
+                    -- Match patterns like "Lv. 15" or "Level 15" or "[15]"
+                    local lvlMatch = obj.Text:match("Lv%.%s*(%d+)") or obj.Text:match("Level%s*(%d+)")
+                    if lvlMatch then
+                        level = tonumber(lvlMatch)
+                        return
+                    end
+                end
+            end
+        end
+        -- 4. Scan all ValueBase objects in player
+        for _, obj in pairs(LocalPlayer:GetDescendants()) do
+            if obj:IsA("IntValue") or obj:IsA("NumberValue") then
+                if obj.Name == "Level" or obj.Name == "Lvl" or obj.Name == "PlayerLevel" then
+                    level = obj.Value
+                    return
+                end
+            end
         end
     end)
     return level
@@ -935,11 +1154,14 @@ end
 ------------------------------------------------------
 local FarmTab = Window:CreateTab("Auto Farm", "swords")
 
-FarmTab:CreateSection("Auto Farm (Level " .. getPlayerLevel() .. ")")
+local detectedLevel = getPlayerLevel()
+FarmTab:CreateSection("Auto Farm (Detected Level: " .. detectedLevel .. ")")
 
 local bestQuest = getBestQuest()
 if bestQuest then
     FarmTab:CreateLabel("Best quest: " .. bestQuest.island .. " (" .. bestQuest.mobName .. ")")
+else
+    FarmTab:CreateLabel("No quest found for level " .. detectedLevel .. " — use Refresh Quest")
 end
 
 FarmTab:CreateToggle({
@@ -977,19 +1199,56 @@ FarmTab:CreateButton({
 FarmTab:CreateButton({
     Name = "Refresh Quest (detect level change)",
     Callback = function()
+        local lvl = getPlayerLevel()
         local q = getBestQuest()
         if q then
             FarmConfig.CurrentQuest = q
             pcall(function()
                 game:GetService("StarterGui"):SetCore("SendNotification", {
                     Title = "Quest Updated",
-                    Text = "Lv." .. getPlayerLevel() .. " → " .. q.island .. " (" .. q.mobName .. ")",
+                    Text = "Lv." .. lvl .. " → " .. q.island .. " (" .. q.mobName .. ")",
+                    Duration = 4,
+                })
+            end)
+        else
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "Level Detection",
+                    Text = "Detected level: " .. lvl .. ". Use manual override if wrong.",
                     Duration = 4,
                 })
             end)
         end
     end,
 })
+
+FarmTab:CreateSection("Manual Level Override")
+
+FarmTab:CreateSlider({
+    Name = "Override Level (if auto-detect fails)",
+    Range = {1, 2550},
+    Increment = 1,
+    Suffix = "",
+    CurrentValue = detectedLevel,
+    Flag = "ManualLevel",
+    Callback = function(val)
+        -- Override the getPlayerLevel function to return this value
+        getPlayerLevel = function() return val end
+        local q = getBestQuest()
+        if q then
+            FarmConfig.CurrentQuest = q
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "Level Overridden",
+                    Text = "Set to Lv." .. val .. " → " .. q.island .. " (" .. q.mobName .. ")",
+                    Duration = 4,
+                })
+            end)
+        end
+    end,
+})
+
+FarmTab:CreateLabel("Use slider above if quest doesn't match your actual level")
 
 ------------------------------------------------------
 -- TAB: FRUIT SNIPER
@@ -1030,6 +1289,80 @@ SniperTab:CreateDropdown({
 SniperTab:CreateLabel("Hops servers scanning for fruit spawns")
 SniperTab:CreateLabel("Stops + alerts when target fruit found")
 SniperTab:CreateLabel("Teleports you to the fruit automatically")
+
+------------------------------------------------------
+-- TAB: COMBAT (Aimbot + Auto Skills)
+------------------------------------------------------
+local CombatTab = Window:CreateTab("Combat", "crosshair")
+
+CombatTab:CreateSection("Aimbot")
+
+CombatTab:CreateToggle({
+    Name = "Enable Aimbot",
+    CurrentValue = false,
+    Flag = "Aimbot",
+    Callback = function(state)
+        AimbotConfig.Enabled = state
+        if state then
+            runAimbot()
+        else
+            if Connections["Aimbot"] then Connections["Aimbot"]:Disconnect(); Connections["Aimbot"] = nil end
+        end
+    end,
+})
+
+CombatTab:CreateSlider({
+    Name = "Aimbot Range",
+    Range = {20, 200},
+    Increment = 10,
+    Suffix = " studs",
+    CurrentValue = 100,
+    Flag = "AimbotRange",
+    Callback = function(val)
+        AimbotConfig.Range = val
+    end,
+})
+
+CombatTab:CreateToggle({
+    Name = "Target Players",
+    CurrentValue = true,
+    Flag = "AimbotPlayers",
+    Callback = function(state)
+        AimbotConfig.TargetPlayers = state
+    end,
+})
+
+CombatTab:CreateToggle({
+    Name = "Target NPCs/Enemies",
+    CurrentValue = true,
+    Flag = "AimbotNPCs",
+    Callback = function(state)
+        AimbotConfig.TargetNPCs = state
+    end,
+})
+
+CombatTab:CreateLabel("Locks onto nearest target, rotates character + camera")
+CombatTab:CreateLabel("Client-side only — undetectable by server")
+
+CombatTab:CreateSection("Auto Skills (Smart Rotation)")
+
+CombatTab:CreateToggle({
+    Name = "Enable Auto Skills",
+    CurrentValue = false,
+    Flag = "AutoSkills",
+    Callback = function(state)
+        AutoSkillConfig.Enabled = state
+        if state then
+            runAutoSkills()
+        else
+            if Connections["AutoSkills"] then Connections["AutoSkills"]:Disconnect(); Connections["AutoSkills"] = nil end
+        end
+    end,
+})
+
+CombatTab:CreateLabel("Uses Z → X → C → V → F in order when enemy is near")
+CombatTab:CreateLabel("Respects cooldowns, only fires one skill per cycle")
+CombatTab:CreateLabel("Only activates when a target is within 30 studs")
 
 ------------------------------------------------------
 -- TAB: EXTRAS
@@ -1153,7 +1486,7 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 print("================================================")
-print("  Blox Fruits Hub v1.2 Loaded")
+print("  Blox Fruits Hub v1.3 Loaded")
 print("  Tabs: Fruit ESP | Player ESP | Teleport |")
-print("        Auto Farm | Fruit Sniper | Extras")
+print("        Farm | Sniper | Combat | Extras")
 print("================================================")

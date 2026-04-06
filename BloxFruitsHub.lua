@@ -1224,23 +1224,32 @@ FarmTab:CreateButton({
 
 FarmTab:CreateSection("Manual Level Override")
 
-FarmTab:CreateSlider({
-    Name = "Override Level (if auto-detect fails)",
-    Range = {1, 2550},
-    Increment = 1,
-    Suffix = "",
-    CurrentValue = detectedLevel,
+FarmTab:CreateInput({
+    Name = "Enter your level",
+    CurrentValue = tostring(detectedLevel),
+    PlaceholderText = "Type your level (e.g. 15)",
+    RemoveTextAfterFocusLost = false,
     Flag = "ManualLevel",
-    Callback = function(val)
-        -- Override the getPlayerLevel function to return this value
+    Callback = function(text)
+        local val = tonumber(text)
+        if not val or val < 1 or val > 2550 then
+            pcall(function()
+                game:GetService("StarterGui"):SetCore("SendNotification", {
+                    Title = "Invalid Level",
+                    Text = "Enter a number between 1 and 2550",
+                    Duration = 3,
+                })
+            end)
+            return
+        end
         getPlayerLevel = function() return val end
         local q = getBestQuest()
         if q then
             FarmConfig.CurrentQuest = q
             pcall(function()
                 game:GetService("StarterGui"):SetCore("SendNotification", {
-                    Title = "Level Overridden",
-                    Text = "Set to Lv." .. val .. " → " .. q.island .. " (" .. q.mobName .. ")",
+                    Title = "Level Set",
+                    Text = "Lv." .. val .. " → " .. q.island .. " (" .. q.mobName .. ")",
                     Duration = 4,
                 })
             end)

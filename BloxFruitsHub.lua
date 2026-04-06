@@ -403,18 +403,16 @@ local function teleportTo(cf)
         return
     end
 
-    -- Slow gradual TP — move ~50 studs per step with 0.2s wait
-    -- This keeps speed under the server's rejection threshold
-    local steps = math.clamp(math.floor(dist / 50), 10, 40)
+    -- Gradual TP — ~75 studs per step, 0.12s wait (faster but still safe)
+    local steps = math.clamp(math.floor(dist / 75), 8, 30)
     for i = 1, steps do
         if not getHRP() then break end
         local alpha = i / steps
         local mid = startPos:Lerp(targetPos, alpha) + Vector3.new(0, 15, 0)
         getHRP().CFrame = CFrame.new(mid)
-        jitterWait(0.18)
+        jitterWait(0.1)
     end
-    -- Final placement with small pause
-    task.wait(0.3)
+    task.wait(0.2)
     local finalHRP = getHRP()
     if finalHRP then
         finalHRP.CFrame = cf + Vector3.new(0, 5, 0)

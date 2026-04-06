@@ -777,21 +777,26 @@ end
 -- Quest NPCs and their mobs per island
 -- TODO: These are common Sea 1 setups. Use DEX Explorer to verify exact NPC names.
 local QuestData = {
-    -- Sea 1
     -- questId format confirmed via SimpleSpy: "StartQuest", questId, 1
+    -- Quest IDs with TODO markers are estimated — capture with SimpleSpy to confirm
     -- Sea 1
-    {level = {1, 15},     island = "Starter Island",    questId = "BanditQuest1",       mobName = "Bandit",            mobArea = CFrame.new(1093, 16, 1310)},
-    {level = {16, 30},    island = "Jungle",             questId = "MonkeyQuest1",       mobName = "Monkey",            mobArea = CFrame.new(-1613, 37, 152)},
-    {level = {31, 60},    island = "Pirate Village",     questId = "PirateQuest1",       mobName = "Pirate",            mobArea = CFrame.new(-1152, 5, 3826)},
-    {level = {61, 90},    island = "Desert",             questId = "DesertBanditQuest1", mobName = "Desert Bandit",     mobArea = CFrame.new(903, 20, 4393)},
-    {level = {91, 120},   island = "Frozen Village",     questId = "SnowBanditQuest1",   mobName = "Snow Bandit",       mobArea = CFrame.new(1510, 88, -5765)},
-    {level = {121, 150},  island = "Marine Fortress",    questId = "MarineQuest1",       mobName = "Marine",            mobArea = CFrame.new(-4851, 25, 4332)},
-    {level = {151, 200},  island = "Skylands",           questId = "SkyBanditQuest1",    mobName = "Sky Bandit",        mobArea = CFrame.new(-4851, 800, -2561)},
-    {level = {201, 250},  island = "Prison",             questId = "PrisonerQuest1",     mobName = "Prisoner",          mobArea = CFrame.new(4875, 6, 735)},
-    {level = {251, 325},  island = "Colosseum",          questId = "GladiatorQuest1",    mobName = "Gladiator",         mobArea = CFrame.new(-1428, 8, -2867)},
-    {level = {326, 375},  island = "Magma Village",      questId = "MilitaryQuest1",     mobName = "Military Soldier",  mobArea = CFrame.new(-5312, 12, 8531)},
-    {level = {376, 450},  island = "Underwater City",    questId = "FishmanQuest1",      mobName = "Fishman",           mobArea = CFrame.new(3856, -2, 1174)},
-    {level = {451, 575},  island = "Fountain City",      questId = "GalleyQuest1",       mobName = "Galley Pirate",     mobArea = CFrame.new(5259, 40, 4711)},
+    {level = {1, 10},     island = "Starter Island",    questId = "BanditQuest1",       mobName = "Bandit",            mobArea = CFrame.new(1093, 16, 1310)},
+    {level = {11, 20},    island = "Jungle",             questId = "MonkeyQuest1",       mobName = "Monkey",            mobArea = CFrame.new(-1613, 37, 152)},
+    {level = {21, 30},    island = "Jungle",             questId = "GorillaQuest1",      mobName = "Gorilla",           mobArea = CFrame.new(-1613, 37, 152)},  -- confirmed via DEX
+    {level = {31, 60},    island = "Pirate Village",     questId = "PirateQuest1",       mobName = "Pirate",            mobArea = CFrame.new(-1152, 5, 3826)},  -- TODO: confirm questId
+    {level = {61, 75},    island = "Desert",             questId = "DesertBanditQuest1", mobName = "Desert Bandit",     mobArea = CFrame.new(903, 20, 4393)},   -- TODO
+    {level = {76, 90},    island = "Desert",             questId = "DesertOfficerQuest1",mobName = "Desert Officer",    mobArea = CFrame.new(903, 20, 4393)},   -- TODO
+    {level = {91, 120},   island = "Frozen Village",     questId = "SnowBanditQuest1",   mobName = "Snow Bandit",       mobArea = CFrame.new(1510, 88, -5765)}, -- TODO
+    {level = {121, 150},  island = "Marine Fortress",    questId = "MarineQuest1",       mobName = "Marine",            mobArea = CFrame.new(-4851, 25, 4332)}, -- TODO
+    {level = {151, 175},  island = "Skylands",           questId = "SkyBanditQuest1",    mobName = "Sky Bandit",        mobArea = CFrame.new(-4851, 800, -2561)},-- TODO
+    {level = {176, 200},  island = "Skylands",           questId = "DarkMasterQuest1",   mobName = "Dark Master",       mobArea = CFrame.new(-4851, 800, -2561)},-- TODO
+    {level = {201, 250},  island = "Prison",             questId = "PrisonerQuest1",     mobName = "Prisoner",          mobArea = CFrame.new(4875, 6, 735)},    -- TODO
+    {level = {251, 300},  island = "Colosseum",          questId = "GladiatorQuest1",    mobName = "Gladiator",         mobArea = CFrame.new(-1428, 8, -2867)}, -- TODO
+    {level = {301, 350},  island = "Magma Village",      questId = "MilitaryQuest1",     mobName = "Military Soldier",  mobArea = CFrame.new(-5312, 12, 8531)}, -- TODO
+    {level = {351, 375},  island = "Magma Village",      questId = "MagmaQuest1",        mobName = "Magma Ninja",       mobArea = CFrame.new(-5312, 12, 8531)}, -- TODO
+    {level = {376, 450},  island = "Underwater City",    questId = "FishmanQuest1",      mobName = "Fishman",           mobArea = CFrame.new(3856, -2, 1174)},  -- TODO
+    {level = {451, 525},  island = "Fountain City",      questId = "GalleyQuest1",       mobName = "Galley Pirate",     mobArea = CFrame.new(5259, 40, 4711)},  -- TODO
+    {level = {526, 625},  island = "Fountain City",      questId = "GalleyCaptainQuest1",mobName = "Galley Captain",    mobArea = CFrame.new(5259, 40, 4711)},  -- TODO
     -- Sea 2
     {level = {700, 850},  island = "Kingdom of Rose",    questId = "SwanQuest1",         mobName = "Swan Pirate",       mobArea = CFrame.new(-2247, 73, -1671)},
     {level = {851, 975},  island = "Green Zone",         questId = "ZombieQuest1",       mobName = "Zombie",            mobArea = CFrame.new(-2448, 8, -3208)},

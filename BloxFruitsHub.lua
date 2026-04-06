@@ -10,18 +10,18 @@
 ------------------------------------------------------
 if not game:IsLoaded() then game.Loaded:Wait() end
 
+-- If already loaded, re-show the window instead of blocking
 local alreadyLoaded = false
 pcall(function()
-    if getgenv and getgenv().BFHubLoaded then alreadyLoaded = true end
+    if getgenv and getgenv().BFHubLoaded and getgenv().BFHubFluent then
+        -- Re-open the existing window
+        pcall(function()
+            getgenv().BFHubFluent:Destroy()
+            getgenv().BFHubFluent = nil
+            getgenv().BFHubLoaded = false
+        end)
+    end
 end)
-if alreadyLoaded then
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "BF Hub", Text = "Already running!", Duration = 3,
-        })
-    end)
-    return
-end
 
 task.wait(2 + math.random() * 2)
 
@@ -677,6 +677,11 @@ local Window = Fluent:CreateWindow({
     Theme = "Dark",
     MinimizeKey = Enum.KeyCode.RightShift,
 })
+
+-- Store reference so re-execution can clean up properly
+pcall(function()
+    if getgenv then getgenv().BFHubFluent = Fluent end
+end)
 
 ------------------------------------------------------
 -- TAB: FARM

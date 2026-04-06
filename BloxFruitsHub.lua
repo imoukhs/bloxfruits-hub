@@ -883,6 +883,16 @@ local function getBestQuest()
 end
 
 local function findQuestNPC(npcName)
+    -- Search in Workspace.NPCs folder first (confirmed via DEX)
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    if npcsFolder then
+        for _, obj in pairs(npcsFolder:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name == npcName then
+                return obj
+            end
+        end
+    end
+    -- Fallback: search entire workspace
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name == npcName then
             return obj
@@ -915,19 +925,45 @@ local function findMob(mobName, range)
 end
 
 local function hasActiveQuest()
-    -- Check if player already has an active quest
+    -- Check if player has an active quest by looking for quest HUD
+    -- Confirmed from screenshot: HUD shows "QUEST\nDefeat X ..."
     local hasQuest = false
     pcall(function()
-        local questFolder = LocalPlayer:FindFirstChild("PlayerGui")
-        if questFolder then
-            for _, gui in pairs(questFolder:GetDescendants()) do
-                if gui:IsA("TextLabel") and gui.Text:find("Quest") then
-                    hasQuest = true
+        local gui = LocalPlayer:FindFirstChild("PlayerGui")
+        if gui then
+            for _, obj in pairs(gui:GetDescendants()) do
+                if obj:IsA("TextLabel") then
+                    local text = obj.Text:lower()
+                    if text:find("defeat") or text:find("quest") and (text:find("%d+/%d+") or text:find("reward")) then
+                        hasQuest = true
+                        return
+                    end
                 end
             end
         end
     end)
     return hasQuest
+end
+
+local function getQuestProgress()
+    -- Try to read "Defeat X Gorillas (3/8)" type text
+    local current, total = 0, 0
+    pcall(function()
+        local gui = LocalPlayer:FindFirstChild("PlayerGui")
+        if gui then
+            for _, obj in pairs(gui:GetDescendants()) do
+                if obj:IsA("TextLabel") then
+                    local c, t = obj.Text:match("%((%d+)/(%d+)%)")
+                    if c and t then
+                        current = tonumber(c)
+                        total = tonumber(t)
+                        return
+                    end
+                end
+            end
+        end
+    end)
+    return current, total
 end
 
 local function interactNPC(npcModel)
@@ -1003,27 +1039,80 @@ local function attackMob(mob)
     end)
 end
 
-local function startQuest(questId)
-    -- Fire the real StartQuest remote (confirmed via SimpleSpy)
-    -- Format: "StartQuest", questId, 1
-    pcall(function()
-        local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-        if remotes then
-            local commF = remotes:FindFirstChild("CommF_") or remotes:FindFirstChild("CommE_")
-            if commF and commF:IsA("RemoteFunction") then
-                commF:InvokeServer("StartQuest", questId, 1)
+local function acceptQuestFromNPC(quest)
+    -- Method 1: Find and interact with quest NPC directly
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    if not npcsFolder then return false end
+
+    -- Look for NPCs near the quest mob area that have a quest dialog
+    local hrp = getHRP()
+    if not hrp then return false end
+
+    -- Teleport to the quest area first
+    teleportTo(quest.mobArea)
+    jitterWait(1.5)
+
+    -- Find closest NPC with interaction (ProximityPrompt, ClickDetector, or Dialog)
+    local bestNPC, bestDist = nil, 200
+    for _, obj in pairs(npcsFolder:GetDescendants()) do
+        if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
+            local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+            if root then
+                local d = (root.Position - getHRP().Position).Magnitude
+                -- Look for NPCs that have quest-giving capability
+                local hasPrompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+                    or obj:FindFirstChildWhichIsA("ClickDetector", true)
+                    or obj:FindFirstChildWhichIsA("Dialog", true)
+                if d < bestDist and hasPrompt then
+                    bestNPC = obj
+                    bestDist = d
+                end
             end
         end
-    end)
-    -- Fallback: try firing on all matching remotes
-    pcall(function()
-        for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
-            if remote:IsA("RemoteFunction") and remote.Name:find("Comm") then
-                remote:InvokeServer("StartQuest", questId, 1)
-                break
+    end
+
+    -- Also search workspace root for NPCs
+    if not bestNPC then
+        for _, obj in pairs(Workspace:GetChildren()) do
+            if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
+                local root = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
+                if root then
+                    local d = (root.Position - getHRP().Position).Magnitude
+                    if d < bestDist then
+                        bestNPC = obj
+                        bestDist = d
+                    end
+                end
             end
         end
-    end)
+    end
+
+    if bestNPC then
+        interactNPC(bestNPC)
+        jitterWait(1)
+
+        -- Click any accept/ok buttons in the quest dialog GUI
+        pcall(function()
+            local gui = LocalPlayer:FindFirstChild("PlayerGui")
+            if gui then
+                for _ = 1, 3 do -- try a few times
+                    for _, btn in pairs(gui:GetDescendants()) do
+                        if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+                            local text = btn:IsA("TextButton") and btn.Text:lower() or ""
+                            if text:find("accept") or text:find("start") or text:find("ok") or text:find("yes") then
+                                pcall(function() fireclick(btn) end)
+                                pcall(function() btn.MouseButton1Click:Fire() end)
+                                jitterWait(0.3)
+                            end
+                        end
+                    end
+                    jitterWait(0.5)
+                end
+            end
+        end)
+        return true
+    end
+    return false
 end
 
 local function runAutoFarm()
@@ -1036,19 +1125,36 @@ local function runAutoFarm()
         end
 
         FarmConfig.CurrentQuest = quest
-        FarmConfig.Status = "Farming: " .. quest.island .. " (" .. quest.mobName .. ")"
 
-        -- Step 1: Accept quest via remote (no NPC interaction needed)
+        -- Step 1: Accept quest if none active
         if not hasActiveQuest() then
-            FarmConfig.Status = "Accepting quest: " .. quest.questId
-            startQuest(quest.questId)
+            FarmConfig.Status = "Getting quest at " .. quest.island
+            acceptQuestFromNPC(quest)
             jitterWait(1)
+            -- If still no quest after trying, skip this cycle
+            if not hasActiveQuest() then
+                FarmConfig.Status = "Couldn't accept quest, retrying..."
+                jitterWait(2)
+                continue
+            end
         end
 
-        -- Step 2: Find and kill mobs in Enemies folder
+        -- Step 2: Check quest progress
+        local current, total = getQuestProgress()
+        FarmConfig.Status = string.format("Farming %s (%d/%d)", quest.mobName, current, total)
+
+        -- Step 3: If quest complete (current >= total), go turn it in
+        if total > 0 and current >= total then
+            FarmConfig.Status = "Quest done! Turning in..."
+            acceptQuestFromNPC(quest) -- interact with NPC again to turn in + get new quest
+            jitterWait(2)
+            continue
+        end
+
+        -- Step 4: Find and kill mobs
         local mob, dist = findMob(quest.mobName, 500)
         if mob then
-            FarmConfig.Status = "Attacking " .. quest.mobName .. " (" .. math.floor(dist) .. "m)"
+            FarmConfig.Status = string.format("Attacking %s (%dm) [%d/%d]", quest.mobName, math.floor(dist), current, total)
             attackMob(mob)
             jitterWait(0.3)
         else

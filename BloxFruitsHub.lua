@@ -424,7 +424,7 @@ end
 ------------------------------------------------------
 local Window = Rayfield:CreateWindow({
     Name = "Blox Fruits Hub v1.2",
-    Icon = 0,
+    Icon = "skull",  -- shown when minimized (Lucide icon)
     LoadingTitle = "Blox Fruits Hub",
     LoadingSubtitle = "by imoukhs",
     Theme = "Default",

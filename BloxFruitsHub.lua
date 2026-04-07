@@ -10,16 +10,30 @@
 ------------------------------------------------------
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- If already loaded, re-show the window instead of blocking
-local alreadyLoaded = false
+-- Clean up previous execution completely (cancel all tasks + destroy UI)
 pcall(function()
-    if getgenv and getgenv().BFHubLoaded and getgenv().BFHubFluent then
-        -- Re-open the existing window
+    if getgenv and getgenv().BFHubLoaded then
+        -- Stop all running features
+        pcall(function() getgenv().BFHubFarmConfig.Enabled = false end)
+        pcall(function() getgenv().BFHubSniperConfig.Enabled = false end)
+        pcall(function() getgenv().BFHubAimbotConfig.Enabled = false end)
+        pcall(function() getgenv().BFHubAutoSkillConfig.Enabled = false end)
+        -- Disconnect all connections
         pcall(function()
-            getgenv().BFHubFluent:Destroy()
-            getgenv().BFHubFluent = nil
-            getgenv().BFHubLoaded = false
+            for _, conn in pairs(getgenv().BFHubConnections or {}) do
+                pcall(function() conn:Disconnect() end)
+            end
         end)
+        -- Clean up ESP billboards
+        pcall(function() for _, bb in pairs(getgenv().BFHubESPObjects or {}) do pcall(function() bb:Destroy() end) end end)
+        pcall(function() for _, bb in pairs(getgenv().BFHubFruitESPObjects or {}) do pcall(function() bb:Destroy() end) end end)
+        -- Destroy old UIs
+        pcall(function() getgenv().BFHubFluent:Destroy() end)
+        pcall(function() getgenv().BFHubToggleGui:Destroy() end)
+        getgenv().BFHubFluent = nil
+        getgenv().BFHubToggleGui = nil
+        getgenv().BFHubLoaded = false
+        task.wait(0.5)
     end
 end)
 
@@ -430,6 +444,19 @@ local QuestData = {
 local FarmConfig = { Enabled = false, CurrentQuest = nil, Status = "Idle" }
 local SniperConfig = { Enabled = false, HopCount = 0, TargetFruits = {} }
 
+-- Store refs in getgenv so re-execution can clean up
+pcall(function()
+    if getgenv then
+        getgenv().BFHubConnections = Connections
+        getgenv().BFHubESPObjects = ESPObjects
+        getgenv().BFHubFruitESPObjects = FruitESPObjects
+        getgenv().BFHubFarmConfig = FarmConfig
+        getgenv().BFHubSniperConfig = SniperConfig
+        getgenv().BFHubAimbotConfig = AimbotConfig
+        getgenv().BFHubAutoSkillConfig = AutoSkillConfig
+    end
+end)
+
 local function getPlayerLevel()
     local level = 1
     pcall(function()
@@ -681,6 +708,98 @@ local Window = Fluent:CreateWindow({
 -- Store reference so re-execution can clean up properly
 pcall(function()
     if getgenv then getgenv().BFHubFluent = Fluent end
+end)
+
+------------------------------------------------------
+-- FLOATING TOGGLE BUTTON (Mobile-friendly)
+------------------------------------------------------
+local fluentScreenGui = nil
+pcall(function()
+    local parent = (gethui and gethui()) or game:GetService("CoreGui")
+    for _, child in pairs(parent:GetChildren()) do
+        if child:IsA("ScreenGui") then
+            for _, d in pairs(child:GetDescendants()) do
+                if d:IsA("TextLabel") and d.Text and d.Text:find("BF Hub") then
+                    fluentScreenGui = child; break
+                end
+            end
+        end
+        if fluentScreenGui then break end
+    end
+end)
+
+local toggleGui = Instance.new("ScreenGui")
+toggleGui.Name = "T"
+toggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+toggleGui.ResetOnSpawn = false
+toggleGui.DisplayOrder = 999
+pcall(function()
+    if gethui then toggleGui.Parent = gethui()
+    elseif syn and syn.protect_gui then syn.protect_gui(toggleGui); toggleGui.Parent = game:GetService("CoreGui")
+    else toggleGui.Parent = game:GetService("CoreGui") end
+end)
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "B"
+toggleBtn.Size = UDim2.new(0, 44, 0, 44)
+toggleBtn.Position = UDim2.new(1, -56, 0.5, -22)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
+toggleBtn.BackgroundTransparency = 0.2
+toggleBtn.Text = "BF"
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 14
+toggleBtn.AutoButtonColor = false
+toggleBtn.Parent = toggleGui
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(1, 0)
+btnCorner.Parent = toggleBtn
+
+local btnStroke = Instance.new("UIStroke")
+btnStroke.Color = Color3.fromRGB(100, 100, 255)
+btnStroke.Thickness = 1.5
+btnStroke.Transparency = 0.5
+btnStroke.Parent = toggleBtn
+
+-- Drag + tap logic
+local UIS = game:GetService("UserInputService")
+local dragging, dragStart, startPos = false, nil, nil
+local guiVisible = true
+
+toggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = toggleBtn.Position
+    end
+end)
+
+Connections["ToggleDrag"] = UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - dragStart
+        toggleBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+Connections["ToggleTap"] = UIS.InputEnded:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and dragging then
+        local delta = input.Position - dragStart
+        dragging = false
+        if delta.Magnitude < 5 then
+            -- Tap (not drag) → toggle GUI visibility
+            guiVisible = not guiVisible
+            if fluentScreenGui then
+                fluentScreenGui.Enabled = guiVisible
+            end
+            toggleBtn.BackgroundTransparency = guiVisible and 0.2 or 0.6
+            btnStroke.Color = guiVisible and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(100, 100, 100)
+        end
+    end
+end)
+
+pcall(function()
+    if getgenv then getgenv().BFHubToggleGui = toggleGui end
 end)
 
 ------------------------------------------------------
@@ -1017,11 +1136,11 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 pcall(function() game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "BF Hub", Text = "Ready! Toggle: RightShift", Duration = 3,
+    Title = "BF Hub", Text = "Ready! Tap the BF button to toggle", Duration = 3,
 }) end)
 
 print("================================================")
 print("  BF Hub v2.0 (Fluent) Loaded")
 print("  Sidebar: Farm | ESP | Teleport | Combat | Settings")
-print("  Toggle: RightShift")
+print("  Toggle: BF button (drag to move) or RightShift")
 print("================================================")

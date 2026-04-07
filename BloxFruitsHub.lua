@@ -794,11 +794,14 @@ Connections["ToggleTap"] = UIS.InputEnded:Connect(function(input)
         local delta = input.Position - dragStart
         dragging = false
         if delta.Magnitude < 5 then
-            -- Tap (not drag) → toggle GUI visibility
+            -- Tap (not drag) → simulate MinimizeKey so Fluent handles its own toggle
+            pcall(function()
+                local vim = game:GetService("VirtualInputManager")
+                vim:SendKeyEvent(true, Enum.KeyCode.RightShift, false, game)
+                task.wait(0.05)
+                vim:SendKeyEvent(false, Enum.KeyCode.RightShift, false, game)
+            end)
             guiVisible = not guiVisible
-            if fluentScreenGui then
-                fluentScreenGui.Enabled = guiVisible
-            end
             toggleBtn.BackgroundTransparency = guiVisible and 0.2 or 0.6
             btnStroke.Color = guiVisible and Color3.fromRGB(100, 100, 255) or Color3.fromRGB(100, 100, 100)
         end

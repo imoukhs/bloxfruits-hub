@@ -695,6 +695,16 @@ end
 ------------------------------------------------------
 -- FLUENT WINDOW
 ------------------------------------------------------
+-- Snapshot existing ScreenGuis so we can find the new one Fluent creates
+local guiParent = nil
+local guisBefore = {}
+pcall(function()
+    guiParent = (gethui and gethui()) or game:GetService("CoreGui")
+    for _, child in pairs(guiParent:GetChildren()) do
+        if child:IsA("ScreenGui") then guisBefore[child] = true end
+    end
+end)
+
 local Window = Fluent:CreateWindow({
     Title = "BF Hub v2.0",
     SubTitle = "by imoukhs",
@@ -713,18 +723,15 @@ end)
 ------------------------------------------------------
 -- FLOATING TOGGLE BUTTON (Mobile-friendly)
 ------------------------------------------------------
+-- Find the ScreenGui that Fluent just created
 local fluentScreenGui = nil
 pcall(function()
-    local parent = (gethui and gethui()) or game:GetService("CoreGui")
-    for _, child in pairs(parent:GetChildren()) do
-        if child:IsA("ScreenGui") then
-            for _, d in pairs(child:GetDescendants()) do
-                if d:IsA("TextLabel") and d.Text and d.Text:find("BF Hub") then
-                    fluentScreenGui = child; break
-                end
+    if guiParent then
+        for _, child in pairs(guiParent:GetChildren()) do
+            if child:IsA("ScreenGui") and not guisBefore[child] then
+                fluentScreenGui = child; break
             end
         end
-        if fluentScreenGui then break end
     end
 end)
 

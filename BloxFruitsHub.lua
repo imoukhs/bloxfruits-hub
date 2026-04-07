@@ -413,7 +413,7 @@ end
 local QuestData = {
     {level = {1, 10},     island = "Starter Island",  mobName = "Bandit",           mobArea = CFrame.new(1093, 16, 1310)},
     {level = {11, 20},    island = "Jungle",           mobName = "Monkey",           mobArea = CFrame.new(-1613, 37, 152)},
-    {level = {21, 30},    island = "Jungle",           mobName = "Gorilla",          mobArea = CFrame.new(-1240, 6, -411)},
+    {level = {21, 30},    island = "Jungle",           mobName = "Gorilla",          mobArea = CFrame.new(-1240, 6, -411), npcArea = CFrame.new(-1613, 37, 152)},
     {level = {31, 60},    island = "Pirate Village",   mobName = "Pirate",           mobArea = CFrame.new(-1152, 5, 3826)},
     {level = {61, 75},    island = "Desert",           mobName = "Desert Bandit",    mobArea = CFrame.new(903, 20, 4393)},
     {level = {76, 90},    island = "Desert",           mobName = "Desert Officer",   mobArea = CFrame.new(903, 20, 4393)},
@@ -587,7 +587,7 @@ end
 local function acceptQuestFromNPC(quest)
     local npcsFolder = Workspace:FindFirstChild("NPCs")
     if not npcsFolder then return false end
-    teleportTo(quest.mobArea); jitterWait(1.5)
+    teleportTo(quest.npcArea or quest.mobArea); jitterWait(1.5)
     local bestNPC, bestDist = nil, 200
     for _, obj in pairs(npcsFolder:GetDescendants()) do
         if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") then
